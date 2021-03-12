@@ -33,6 +33,7 @@ var HTTPClient *http.Client = &http.Client{
 }
 
 var API_KEY = "867EZZQOI92UGHPW4RHHBP9F64ANOPGA"
+var ESC_ERASE_DISPLAY = "\x1b[2J\x1b[0;0H"
 
 func main() {
 
@@ -80,6 +81,10 @@ func main() {
 		const bDebug = true
 		const bSaveCandles = false
 		const TEST_CANDLES_FNAME = "./test_candles.json"
+
+		if _, eQ = bufWri.WriteString(ESC_ERASE_DISPLAY); eQ != nil {
+			return
+		}
 
 		if bDebug {
 
@@ -142,7 +147,8 @@ func main() {
 		}
 
 		// TODO: get terminal height for [{n}A
-		if _, e1 := bufWri.WriteString("\x1b[2J\x1b[0;0H"); e1 != nil {
+
+		if _, e1 := bufWri.WriteString(ESC_ERASE_DISPLAY); e1 != nil {
 			fnLog("IO", e1)
 			goto DO_SLEEP
 		}

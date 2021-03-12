@@ -1,14 +1,13 @@
 package main
 
 import (
-	"fmt"
+	"embed"
+	_ "embed"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/png"
 	"io"
-	"math"
-	"os"
 	"strings"
 
 	"github.com/BourgeoisBear/gooder/quote"
@@ -20,9 +19,14 @@ const N_WID = 350
 const N_HGT = 75
 
 var gIMG *image.Paletted
-var gFONT image.Image
 var gIMG_CLEAR_PIX []uint8
 var IX_GREEN, IX_RED, N_GREEN, N_RED int
+
+var gFONT image.Image
+var CHR_W, CHR_H, CHRS_PER_ROW int
+
+//go:embed fonts/mono.png
+var FsAssets embed.FS
 
 func init() {
 
@@ -50,22 +54,26 @@ func init() {
 	)
 	N_GREEN = len(P) - IX_GREEN
 
+	// TEMP IMAGE (for chart)
 	gIMG = image.NewPaletted(image.Rect(0, 0, N_WID, N_HGT), P)
 	gIMG_CLEAR_PIX = make([]uint8, len(gIMG.Pix))
 
-	fFont, e := os.Open("./fonts/Charset-DNS_1Color Pyrotechnics Font.png")
+	// FONT
+	fFont, e := FsAssets.Open("fonts/mono.png")
 	if e != nil {
 		panic(e)
 	}
-	defer fFont.Close()
 
 	gFONT, e = png.Decode(fFont)
 	if e != nil {
 		panic(e)
 	}
 
-	// TODO: assert that gFONT is paletted
-	// fmt.Printf("%#v", gFONT.ColorModel())
+	bnds := gFONT.Bounds()
+	CHRS_PER_ROW = 32
+	CHR_W = bnds.Max.X / CHRS_PER_ROW
+	CHR_H = bnds.Max.Y / 3
+	//fmt.Printf("%#v, %d, %d", bnds, CHR_W, CHR_H)
 }
 
 func SixelChart(out io.Writer, B quote.S_Buckets) error {
@@ -110,12 +118,12 @@ func SixelChart(out io.Writer, B quote.S_Buckets) error {
 
 	price_prev, prev_ok := priceY(0)
 	var t_prev float32 = 1
-	fGREENS := float64(N_GREEN)
+	fGREENS := float32(N_GREEN)
 
 	fnPlot := func(x, y int, bright float32) {
 
-		c_ix := int(math.Round(float64(bright) * fGREENS))
-		if c_ix == N_GREEN {
+		c_ix := int((bright * fGREENS) + 0.5)
+		if c_ix >= N_GREEN {
 			c_ix = N_GREEN - 1
 		}
 
@@ -143,16 +151,16 @@ func SixelChart(out io.Writer, B quote.S_Buckets) error {
 
 	/*
 		TODO:
-			- labels
-				- text localization
-				- placement
+			- label placement
+			- embed test candles
 			- blank time range for buckets (for active trading day)
 			- only last 8hrs
-			- up/down color green/red
 	*/
 
-	_, h := Text(gIMG, fmt.Sprintf("%0.02f", B.PMax), 10, 5)
-	Text(gIMG, fmt.Sprintf("%0.02f", B.PMin), 10, 5+h)
+	pad := 9
+	x_txt, y_txt := 2, 3
+	_, h := Text(gIMG, B.PMax.String(pad, 2), x_txt, y_txt)
+	Text(gIMG, B.PMin.String(pad, 2), x_txt, y_txt+h)
 
 	return pEnc.Encode(gIMG)
 }
@@ -162,16 +170,12 @@ func Text(iImg image.Image, txt string, x, y int) (width, height int) {
 	bs := []byte(strings.ToUpper(txt))
 	ptDst := image.Point{x, y}
 
-	const CHR_W, CHR_H = 8, 8
-
 	for _, chr := range bs {
 
-		// 32 -> 90
-		// 320 x 16 | 2 rows, 40 cols | 8x8px
-		if (chr >= 32) && (chr <= 90) {
+		if (chr >= 32) && (chr <= 126) {
 
-			ccol := int(chr-32) % 40
-			crow := int(chr-32) / 40
+			ccol := int(chr-32) % CHRS_PER_ROW
+			crow := int(chr-32) / CHRS_PER_ROW
 
 			draw.Draw(
 				gIMG,
