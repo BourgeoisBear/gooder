@@ -35,6 +35,9 @@ var HTTPClient *http.Client = &http.Client{
 var API_KEY = "867EZZQOI92UGHPW4RHHBP9F64ANOPGA"
 var ESC_ERASE_DISPLAY = "\x1b[2J\x1b[0;0H"
 
+const TEST_CANDLES_FNAME = "test_candles.json"
+const N_BUCKETS = 96
+
 func main() {
 
 	var SYMBOLS string
@@ -64,8 +67,6 @@ func main() {
 		}
 	}
 
-	const N_BUCKETS = 96
-
 	if QUICKCHART {
 
 		var eQ error
@@ -80,7 +81,6 @@ func main() {
 		var bs []byte
 		const bDebug = true
 		const bSaveCandles = false
-		const TEST_CANDLES_FNAME = "./test_candles.json"
 
 		if _, eQ = bufWri.WriteString(ESC_ERASE_DISPLAY); eQ != nil {
 			return
@@ -88,7 +88,14 @@ func main() {
 
 		if bDebug {
 
-			if bs, eQ = ioutil.ReadFile(TEST_CANDLES_FNAME); eQ != nil {
+			fTestData, e := FsAssets.Open("assets/" + TEST_CANDLES_FNAME)
+			if e != nil {
+				eQ = e
+				return
+			}
+			defer fTestData.Close()
+
+			if bs, eQ = ioutil.ReadAll(fTestData); eQ != nil {
 				return
 			}
 
@@ -120,14 +127,14 @@ func main() {
 			}
 
 			if bSaveCandles {
-				if eQ = ioutil.WriteFile(TEST_CANDLES_FNAME, bs, 0644); eQ != nil {
+				if eQ = ioutil.WriteFile("./"+TEST_CANDLES_FNAME, bs, 0644); eQ != nil {
 					return
 				}
 			}
 		}
 
 		BKTS := quote.ToBuckets(sC, N_BUCKETS)
-		if eQ = SixelChart(bufWri, BKTS); eQ != nil {
+		if eQ = WriteChart(bufWri, BKTS); eQ != nil {
 			return
 		}
 
@@ -194,7 +201,7 @@ func main() {
 			}
 
 			BKTS := quote.ToBuckets(symH, N_BUCKETS)
-			if e2 := SixelChart(bufWri, BKTS); e2 != nil {
+			if e2 := WriteChart(bufWri, BKTS); e2 != nil {
 				fnLog("SIXEL", e2)
 				goto DO_SLEEP
 			}
@@ -215,36 +222,3 @@ func main() {
 		time.Sleep(time.Duration(POLL_SECONDS) * time.Second)
 	}
 }
-
-/*
-
-	"graph goes up means world more gooder"
-
-	TODO:
-		- check terminal capabilities before rendering sixel
-		- query candles, update from there
-		- query/sleep selection for different assets
-		- api selector (ameritrade, yahoo, google?, iex)
-			https://github.com/ranaroussi/yfinance
-			https://iexcloud.io/docs/api/#quote
-			https://developer.tdameritrade.com/quotes/apis/get/marketdata/%7Bsymbol%7D/quotes
-			https://live.euronext.com/en/intraday_chart/getDetailedQuoteAjax/FR0000031122-XPAR/full
-			https://finnhub.io/
-
-		DEFS:
-			BID: highest buyer will pay
-			ASK: lowest seller will accept
-
-		MARKET HOURS:
-			pre
-				NYSE:	6:30a-9:30a
-				NASD: 4:00a-9:30a
-			reg
-				9:30a-4:00p EST
-			post
-				NYSE: 4:00p-8:00p
-				NASD: 4:00p-8:00p
-
-		CREDITS:
-			- https://github.com/ianhan/BitmapFonts
-*/

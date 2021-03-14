@@ -11,12 +11,13 @@ import (
 	"strings"
 
 	"github.com/BourgeoisBear/gooder/quote"
-	"github.com/BourgeoisBear/gooder/sixel"
 	"github.com/BourgeoisBear/gooder/wuline"
+	"github.com/BourgeoisBear/rasterm"
 )
 
-const N_WID = 350
-const N_HGT = 75
+// NOTE: image height should ideally be a multiple of six (to avoid vertical overhang on sixel format)
+const N_WID = 360
+const N_HGT = 72
 
 var gIMG *image.Paletted
 var gIMG_CLEAR_PIX []uint8
@@ -25,7 +26,7 @@ var IX_GREEN, IX_RED, N_GREEN, N_RED int
 var gFONT image.Image
 var CHR_W, CHR_H, CHRS_PER_ROW int
 
-//go:embed fonts/mono.png
+//go:embed assets/*
 var FsAssets embed.FS
 
 func init() {
@@ -59,10 +60,11 @@ func init() {
 	gIMG_CLEAR_PIX = make([]uint8, len(gIMG.Pix))
 
 	// FONT
-	fFont, e := FsAssets.Open("fonts/mono.png")
+	fFont, e := FsAssets.Open("assets/mono.png")
 	if e != nil {
 		panic(e)
 	}
+	defer fFont.Close()
 
 	gFONT, e = png.Decode(fFont)
 	if e != nil {
@@ -76,9 +78,24 @@ func init() {
 	//fmt.Printf("%#v, %d, %d", bnds, CHR_W, CHR_H)
 }
 
-func SixelChart(out io.Writer, B quote.S_Buckets) error {
+func WriteChart(out io.Writer, B quote.S_Buckets) error {
 
-	pEnc := sixel.NewEncoder(out)
+	if rasterm.IsTermItermWez() {
+		RedrawChart(B)
+		return rasterm.WriteItermImage(out, gIMG)
+	}
+
+	if rasterm.IsTermKitty() {
+		RedrawChart(B)
+		return rasterm.WriteKittyImage(out, gIMG)
+	}
+
+	RedrawChart(B)
+	pEnc := rasterm.NewEncoder(out)
+	return pEnc.Encode(gIMG)
+}
+
+func RedrawChart(B quote.S_Buckets) {
 
 	// CLEAR BITMAP
 	copy(gIMG.Pix, gIMG_CLEAR_PIX)
@@ -92,16 +109,28 @@ func SixelChart(out io.Writer, B quote.S_Buckets) error {
 		gIMG.SetColorIndex(i, N_HGT-1, 1)
 	}
 
+	// EARLY EXIT ON NO BUCKETS
+	nBuckets := len(B.Bkts)
+	if nBuckets == 0 {
+		return
+	}
+
 	// IMG DIMS (MINUS AXES WIDTHS)
 	dx, dy := gIMG.Rect.Dx()-1, gIMG.Rect.Dy()-1
 
-	// CALC PRICESCALE [Y]
+	// 15% VERTICAL PADDING
 	YPad := int(0.15 * float32(dy))
-	dP := B.PMax - B.PMin
-	if dP < 0 {
+
+	// CALC PRICESCALE [Y]
+	var dP, sP quote.T_Num
+	if dP = B.PMax - B.PMin; dP < 0 {
 		dP = -dP
 	}
-	sP := quote.T_Num(dy-YPad) / dP
+
+	// DIVZERO GUARD
+	if dP > 0 {
+		sP = quote.T_Num(dy-YPad) / dP
+	}
 
 	priceY := func(ix int) (float32, bool) {
 
@@ -114,7 +143,7 @@ func SixelChart(out io.Writer, B quote.S_Buckets) error {
 		return -1, false
 	}
 
-	var sT float32 = float32(dx) / float32(len(B.Bkts))
+	var sT float32 = float32(dx) / float32(nBuckets)
 
 	price_prev, prev_ok := priceY(0)
 	var t_prev float32 = 1
@@ -149,20 +178,10 @@ func SixelChart(out io.Writer, B quote.S_Buckets) error {
 		price_prev, prev_ok, t_prev = price, price_ok, t_cur
 	}
 
-	/*
-		TODO:
-			- label placement
-			- embed test candles
-			- blank time range for buckets (for active trading day)
-			- only last 8hrs
-	*/
-
 	pad := 9
 	x_txt, y_txt := 2, 3
 	_, h := Text(gIMG, B.PMax.String(pad, 2), x_txt, y_txt)
 	Text(gIMG, B.PMin.String(pad, 2), x_txt, y_txt+h)
-
-	return pEnc.Encode(gIMG)
 }
 
 func Text(iImg image.Image, txt string, x, y int) (width, height int) {
